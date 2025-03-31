@@ -26,8 +26,11 @@ GA4_PROPERTY_ID = os.getenv('GA4_PROPERTY_ID')
 GOOGLE_ADS_CUSTOMER_ID = os.getenv('GOOGLE_ADS_CUSTOMER_ID')
 GOOGLE_ADS_DEVELOPER_TOKEN = os.getenv('GOOGLE_ADS_DEVELOPER_TOKEN')
 
-# OAuth scopes needed for Google Analytics and Ads API
+# OAuth scopes needed for Google APIs
 SCOPES = [
+    'https://www.googleapis.com/auth/adwords',
     'https://www.googleapis.com/auth/analytics.readonly',
-    'https://www.googleapis.com/auth/adwords'
+    'https://www.googleapis.com/auth/userinfo.email',
+    'https://www.googleapis.com/auth/userinfo.profile',
+    'openid'
 ]
