@@ -1,1 +1,1 @@
-# Analytics module initialization
+# Analytics module

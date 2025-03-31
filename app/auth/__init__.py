@@ -1,1 +1,1 @@
-# Auth module initialization
+# Authentication module

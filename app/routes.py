@@ -1,5 +1,4 @@
 from flask import Blueprint, render_template, jsonify, session, redirect, url_for
-from app.auth.google_oauth import GoogleOAuth
 
 main_bp = Blueprint('main', __name__)
 
@@ -11,10 +10,7 @@ def index():
 @main_bp.route('/api/auth/status')
 def auth_status():
     """API endpoint to check authentication status"""
-    oauth = GoogleOAuth()
-    credentials = oauth.get_credentials_from_session()
-    
-    if credentials:
+    if 'credentials' in session:
         return jsonify({
             'authenticated': True
         })
@@ -25,8 +21,8 @@ def auth_status():
         })
 
 @main_bp.route('/health')
-def health_check():
-    """Health check endpoint for monitoring"""
+def health():
+    """Health check endpoint for DigitalOcean"""
     return jsonify({
         'status': 'healthy'
     })

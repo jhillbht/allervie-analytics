@@ -1,42 +1,68 @@
-{% extends "base.html" %}
-
-{% block title %}Dashboard - Allervie Analytics{% endblock %}
-
-{% block content %}
-<div class="dashboard-header">
-    <h2>Analytics Dashboard</h2>
-    <div class="date-filter">
-        <label for="date-range">Time period:</label>
-        <select id="date-range" onchange="updateCharts(this.value)">
-            <option value="7">Last 7 days</option>
-            <option value="30" selected>Last 30 days</option>
-            <option value="90">Last 90 days</option>
-        </select>
-    </div>
-</div>
-
-<div class="metrics-section">
-    <h2>User Activity</h2>
-    <div class="chart-container">
-        <canvas id="active-users-chart"></canvas>
-    </div>
-</div>
-
-<div class="metrics-section">
-    <h2>Traffic Sources</h2>
-    <div class="chart-container">
-        <canvas id="traffic-sources-chart"></canvas>
-    </div>
-</div>
-
-<div class="metrics-section">
-    <h2>Campaign Performance</h2>
-    <div class="chart-container">
-        <canvas id="campaign-performance-chart"></canvas>
-    </div>
-</div>
-{% endblock %}
-
-{% block scripts %}
-<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
-{% endblock %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Allervie Analytics</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <header>
+        <div class="container">
+            <h1>Allervie Analytics</h1>
+            <div id="auth-status"></div>
+        </div>
+    </header>
+    
+    <main>
+        <div class="container">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ category }}">
+                            {{ message }}
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+            
+            <div class="dashboard-header">
+                <h2>Analytics Dashboard</h2>
+                <div class="date-filter">
+                    <label for="date-range">Time period:</label>
+                    <select id="date-range" onchange="updateCharts(this.value)">
+                        <option value="7">Last 7 days</option>
+                        <option value="30" selected>Last 30 days</option>
+                        <option value="90">Last 90 days</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="metrics-section">
+                <h2>User Activity</h2>
+                <div class="chart-container">
+                    <canvas id="active-users-chart"></canvas>
+                </div>
+            </div>
+            
+            <div class="metrics-section">
+                <h2>Traffic Sources</h2>
+                <div class="chart-container">
+                    <canvas id="traffic-sources-chart"></canvas>
+                </div>
+            </div>
+            
+            <div class="metrics-section">
+                <h2>Campaign Performance</h2>
+                <div class="chart-container">
+                    <canvas id="campaign-performance-chart"></canvas>
+                </div>
+            </div>
+        </div>
+    </main>
+    
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="{{ url_for('static', filename='js/auth.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+</body>
+</html>
