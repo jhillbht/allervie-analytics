@@ -27,27 +27,27 @@ services:
     value: "0.0.0.0"
     scope: RUN_TIME
   - key: FLASK_SECRET_KEY
-    value: "replace-with-strong-key"
+    value: "a_strong_secure_random_key_for_production"
     scope: RUN_TIME
     type: SECRET
   - key: GOOGLE_CLIENT_ID
-    value: "your-client-id"
+    value: "22083613754-d1omeg2958vrsndpqg2v1jp0ncm7sr23.apps.googleusercontent.com"
     scope: RUN_TIME
     type: SECRET
   - key: GOOGLE_CLIENT_SECRET
-    value: "your-client-secret"
+    value: "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"
     scope: RUN_TIME
     type: SECRET
   - key: REDIRECT_URI
-    value: "https://${APP_DOMAIN}/auth/callback"
+    value: "https://allervie-analytics-s5bl8.ondigitalocean.app/auth/callback"
     scope: RUN_TIME
   - key: GA4_PROPERTY_ID
-    value: "your-property-id"
+    value: "399455767"
     scope: RUN_TIME
   - key: GOOGLE_ADS_CUSTOMER_ID
-    value: "your-customer-id"
+    value: "8437927403"
     scope: RUN_TIME
   - key: GOOGLE_ADS_DEVELOPER_TOKEN
-    value: "your-developer-token"
+    value: "HpV1ZGZOKj6JewVzrOdXXw"
     scope: RUN_TIME
     type: SECRET
