@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Allervie Analytics{% endblock %}
+
+{% block content %}
+<div class="dashboard-header">
+    <h2>Analytics Dashboard</h2>
+    <div class="date-filter">
+        <label for="date-range">Time period:</label>
+        <select id="date-range" onchange="updateCharts(this.value)">
+            <option value="7">Last 7 days</option>
+            <option value="30" selected>Last 30 days</option>
+            <option value="90">Last 90 days</option>
+        </select>
+    </div>
+</div>
+
+<div class="metrics-section">
+    <h2>User Activity</h2>
+    <div class="chart-container">
+        <canvas id="active-users-chart"></canvas>
+    </div>
+</div>
+
+<div class="metrics-section">
+    <h2>Traffic Sources</h2>
+    <div class="chart-container">
+        <canvas id="traffic-sources-chart"></canvas>
+    </div>
+</div>
+
+<div class="metrics-section">
+    <h2>Campaign Performance</h2>
+    <div class="chart-container">
+        <canvas id="campaign-performance-chart"></canvas>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+{% endblock %}
