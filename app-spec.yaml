@@ -45,7 +45,7 @@ services:
     value: "399455767"
     scope: RUN_TIME
   - key: GOOGLE_ADS_CUSTOMER_ID
-    value: "8437927403"
+    value: "5686645688"
     scope: RUN_TIME
   - key: GOOGLE_ADS_DEVELOPER_TOKEN
     value: "HpV1ZGZOKj6JewVzrOdXXw"

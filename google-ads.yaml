@@ -3,10 +3,10 @@
 developer_token: HpV1ZGZOKj6JewVzrOdXXw
 
 # Required for manager accounts only: Specify the login customer ID used to authenticate API calls.
-login_customer_id: 8437927403
+login_customer_id: 5686645688
 
 # Required for manager accounts only: Specify the linked customer ID.
-linked_customer_id: 8437927403
+linked_customer_id: 5686645688
 
 # API Version (using v19 as of March 2025)
 api_version: v19

@@ -220,6 +220,12 @@ def ads_campaigns():
         
         # Get Google Ads configuration
         customer_id = current_app.config['GOOGLE_ADS_CUSTOMER_ID']
+        
+        # Check if we're using the old incorrect ID and switch to the MCC ID
+        if str(customer_id).strip() == "8437927403":
+            customer_id = "5686645688"  # AllerVie MCC ID
+            logger.warning(f"Using MCC ID instead of client ID: {customer_id}")
+        
         # Format customer ID properly (remove quotes and other non-numeric characters)
         customer_id = str(customer_id).replace('-', '').strip().replace('"', '').replace("'", "")
         logger.info(f"Using Google Ads Customer ID: {customer_id}")

@@ -12,9 +12,14 @@ class GoogleAdsAnalytics:
     
     def __init__(self, credentials, customer_id, developer_token):
         """Initialize with OAuth credentials and Google Ads account info"""
+        # Check if customer_id matches the MCC ID format (from the second image)
+        # If it matches the old incorrect ID, use the MCC ID instead
+        if str(customer_id).strip() == "8437927403":
+            customer_id = "5686645688"  # AllerVie MCC ID from the second image
+            logging.warning(f"Replaced incorrect customer ID with MCC ID: {customer_id}")
+            
         # Ensure customer_id is properly formatted (no dashes or other formatting)
-        # Strip any non-numeric characters
-        self.customer_id = str(customer_id).replace('-', '').strip()
+        self.customer_id = str(customer_id).replace('-', '').strip().replace('"', '').replace("'", "")
         logging.info(f"Using Google Ads customer_id: {self.customer_id}")
         
         self.developer_token = developer_token
@@ -89,13 +94,25 @@ refresh_token: {refresh_token}
         with open(yaml_path, 'r') as file:
             yaml_content = file.read()
         
+        # Update login_customer_id and linked_customer_id to ensure they match
+        import re
+        yaml_content = re.sub(
+            r'login_customer_id:.*', 
+            f'login_customer_id: {self.customer_id}',
+            yaml_content
+        )
+        yaml_content = re.sub(
+            r'linked_customer_id:.*', 
+            f'linked_customer_id: {self.customer_id}',
+            yaml_content
+        )
+        
         # Check if refresh_token needs to be added or updated
         if 'refresh_token:' not in yaml_content:
             # Add refresh_token at the end of the file
             yaml_content += f"\nrefresh_token: {refresh_token}\n"
         else:
             # Replace existing refresh_token
-            import re
             yaml_content = re.sub(
                 r'refresh_token:.*', 
                 f'refresh_token: {refresh_token}',
@@ -106,7 +123,7 @@ refresh_token: {refresh_token}
         with open(yaml_path, 'w') as file:
             file.write(yaml_content)
         
-        logging.info(f"Updated refresh_token in {yaml_path}")
+        logging.info(f"Updated refresh_token and customer IDs in {yaml_path}")
     
     def get_campaign_performance(self, days=30):
         """Get campaign performance data for the specified number of days"""
@@ -258,9 +275,8 @@ refresh_token: {refresh_token}
             "Content-Type": "application/json"
         }
         
-        # Add login-customer-id header if necessary
-        # Only needed for manager accounts
-        headers["login-customer-id"] = str(self.customer_id).replace('-', '').strip()
+        # Add login-customer-id header for manager accounts
+        headers["login-customer-id"] = self.customer_id
         
         # Log headers (without sensitive information)
         safe_headers = headers.copy()
