@@ -31,11 +31,12 @@ def login():
     if current_app.config['DEBUG']:
         os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
     
-    # Generate authorization URL
+    # Generate authorization URL with explicit prompt for consent
+    # This ensures we always get the refresh token which is required for OAuth to work
     authorization_url, state = flow.authorization_url(
-        access_type='offline',
-        include_granted_scopes='true',
-        prompt='consent'
+        access_type='offline',       # Request a refresh token
+        include_granted_scopes='true', # Include previously granted scopes
+        prompt='consent'            # Always show consent screen to get refresh token
     )
     
     # Store state for CSRF protection
@@ -85,6 +86,24 @@ def callback():
         if current_app.config['DEBUG']:
             current_app.logger.info(f"Requested scopes: {current_app.config['SCOPES']}")
             current_app.logger.info(f"Actual scopes: {flow.credentials.scopes}")
+            
+            # Check for required Google Ads API scope
+            if 'https://www.googleapis.com/auth/adwords' not in flow.credentials.scopes:
+                current_app.logger.warning("Missing required Google Ads API scope in returned credentials")
+            
+            # Log token info (first few characters only for security)
+            if flow.credentials.token:
+                token_preview = flow.credentials.token[:10] + "..." if len(flow.credentials.token) > 10 else "..."
+                current_app.logger.info(f"OAuth token received, length: {len(flow.credentials.token)}, preview: {token_preview}")
+            else:
+                current_app.logger.error("OAuth token is missing or empty")
+            
+            # Log refresh token info (first few characters only for security)
+            if flow.credentials.refresh_token:
+                refresh_token_preview = flow.credentials.refresh_token[:5] + "..." if len(flow.credentials.refresh_token) > 5 else "..."
+                current_app.logger.info(f"Refresh token received, length: {len(flow.credentials.refresh_token)}, preview: {refresh_token_preview}")
+            else:
+                current_app.logger.error("Refresh token is missing. Make sure 'prompt=consent' is included in the authorization URL")
             
         # Store credentials in session
         credentials = flow.credentials

@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, request, current_app, session
+from flask import Blueprint, jsonify, request, current_app, session, redirect, url_for
 from google.oauth2.credentials import Credentials
 from google.analytics.data_v1beta import BetaAnalyticsDataClient
 from google.analytics.data_v1beta.types import RunReportRequest, DateRange, Dimension, Metric
@@ -16,7 +16,7 @@ analytics_bp = Blueprint('analytics', __name__)
 
 # Configure logger for debugging
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,  # Set to DEBUG for maximum info
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     stream=sys.stdout
 )
@@ -160,9 +160,11 @@ def ads_campaigns():
     try:
         # Check if user is authenticated
         if 'credentials' not in session:
+            logger.error("User not authenticated for Google Ads API access")
             return jsonify({
                 'success': False,
-                'error': 'Not authenticated'
+                'error': 'Not authenticated. Please log in to access Google Ads data.',
+                'login_url': url_for('auth.login')
             }), 401
         
         # Enable more detailed logging
@@ -176,8 +178,22 @@ def ads_campaigns():
         
         # Log the credential info (without sensitive parts)
         if credentials_dict:
-            logger.info(f"Credentials scopes: {credentials_dict.get('scopes', [])}")
-            logger.info(f"Credentials have refresh_token: {'Yes' if credentials_dict.get('refresh_token') else 'No'}")
+            scopes = credentials_dict.get('scopes', [])
+            has_refresh_token = 'refresh_token' in credentials_dict and bool(credentials_dict['refresh_token'])
+            has_token = 'token' in credentials_dict and bool(credentials_dict['token'])
+            
+            logger.info(f"Credentials scopes: {scopes}")
+            logger.info(f"Credentials have refresh_token: {has_refresh_token}")
+            logger.info(f"Credentials have token: {has_token}")
+            
+            # Check for required Google Ads API scope
+            if 'https://www.googleapis.com/auth/adwords' not in scopes:
+                logger.error("Missing required Google Ads API scope")
+                return jsonify({
+                    'success': False,
+                    'error': "Missing required Google Ads API permissions. Please log out and log in again.",
+                    'login_url': url_for('auth.logout') + "?next=" + url_for('auth.login')
+                }), 403
         
         # Validate required credential fields
         required_fields = ['token', 'refresh_token', 'token_uri', 'client_id', 'client_secret', 'scopes']
@@ -187,17 +203,29 @@ def ads_campaigns():
             logger.error(f"Missing credential fields: {missing_fields}")
             return jsonify({
                 'success': False,
-                'error': f"Incomplete credentials. Missing fields: {', '.join(missing_fields)}. Please log out and log in again."
+                'error': f"Incomplete credentials. Missing fields: {', '.join(missing_fields)}. Please log out and log in again.",
+                'login_url': url_for('auth.logout') + "?next=" + url_for('auth.login')
             }), 400
         
         # Create credentials object and refresh if needed
         credentials = Credentials(**credentials_dict)
         
+        # Check token validity
+        if not credentials.token:
+            logger.error("OAuth token is empty or invalid")
+            return jsonify({
+                'success': False,
+                'error': "Invalid OAuth token. Please log out and log in again.",
+                'login_url': url_for('auth.logout') + "?next=" + url_for('auth.login')
+            }), 401
+        
         # Check if token is expired and refresh it
+        token_refreshed = False
         if credentials.expired and credentials.refresh_token:
             logger.info("Refreshing expired OAuth token")
             try:
                 credentials.refresh(Request())
+                token_refreshed = True
                 logger.info("Successfully refreshed OAuth token")
                 
                 # Update session with refreshed credentials
@@ -215,7 +243,8 @@ def ads_campaigns():
                 logger.error(traceback.format_exc())
                 return jsonify({
                     'success': False,
-                    'error': f"Failed to refresh OAuth token: {str(refresh_error)}. Please log out and log in again."
+                    'error': f"Failed to refresh OAuth token: {str(refresh_error)}. Please log out and log in again.",
+                    'login_url': url_for('auth.logout') + "?next=" + url_for('auth.login')
                 }), 401
         
         # Get Google Ads configuration
@@ -247,7 +276,7 @@ def ads_campaigns():
             google_ads = GoogleAdsAnalytics(credentials, customer_id, developer_token)
             
             # Log the credential status
-            logger.info(f"OAuth credential status - expired: {credentials.expired}, token: {'Present' if credentials.token else 'Missing'}")
+            logger.info(f"OAuth credential status - expired: {credentials.expired}, token: {'Present' if credentials.token else 'Missing'}, token refreshed: {token_refreshed}")
             
             # Get campaign performance data (this will try GRPC first, then REST API if needed)
             logger.info("Fetching campaign performance data...")
@@ -272,6 +301,17 @@ def ads_campaigns():
             # Log the detailed error for debugging
             logger.error(f"Google Ads API error details: {str(api_error)}")
             logger.error(traceback.format_exc())
+            
+            # Check if it's an authentication error
+            error_str = str(api_error).lower()
+            if 'auth' in error_str or 'token' in error_str or 'oauth' in error_str or '401' in error_str:
+                logger.error("Authentication error detected")
+                return jsonify({
+                    'success': False,
+                    'error': f"Authentication error with Google Ads API. Please log out and log in again.",
+                    'error_details': str(api_error),
+                    'login_url': url_for('auth.logout') + "?next=" + url_for('auth.login')
+                }), 401
             
             # Try to parse JSON error response if present
             error_message = str(api_error)
@@ -325,6 +365,15 @@ def ads_campaigns():
             
         error_str = '\n'.join(error_message)
         logger.error(f"Google Ads API exception: {error_str}")
+        
+        # Check for authentication errors
+        if any(auth_term in error_str.lower() for auth_term in ['auth', 'token', 'oauth', 'credential']):
+            return jsonify({
+                'success': False,
+                'error': "Authentication error with Google Ads API. Please log out and log in again.",
+                'error_details': error_str,
+                'login_url': url_for('auth.logout') + "?next=" + url_for('auth.login')
+            }), 401
         
         return jsonify({
             'success': False,

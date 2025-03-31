@@ -35,6 +35,14 @@ class GoogleAdsAnalytics:
                 logging.error(f"Failed to refresh OAuth credentials: {str(e)}")
                 raise Exception(f"OAuth token refresh failed: {str(e)}")
         
+        # Log token info (first few characters only for security)
+        if self.credentials.token:
+            token_preview = self.credentials.token[:10] + "..." if len(self.credentials.token) > 10 else "..."
+            logging.info(f"OAuth token length: {len(self.credentials.token)}, preview: {token_preview}")
+        else:
+            logging.error("OAuth token is missing or empty")
+            raise Exception("OAuth token is missing, please log out and log in again")
+        
         # Path to the YAML configuration file
         yaml_path = os.path.join(os.getcwd(), "google-ads.yaml")
         logging.info(f"YAML configuration path: {yaml_path}")
@@ -234,6 +242,11 @@ refresh_token: {refresh_token}
                 logging.error(f"Failed to refresh OAuth credentials: {str(e)}")
                 raise Exception(f"OAuth token refresh failed for REST API: {str(e)}")
         
+        # Double-check token validity
+        if not self.credentials.token:
+            logging.error("OAuth token is missing or empty for REST API call")
+            raise Exception("OAuth token is missing for REST API call")
+        
         # Prepare the Google Ads REST API request
         # Use v19 which is the current version as of March 2025
         api_version = "v19"
@@ -269,8 +282,11 @@ refresh_token: {refresh_token}
         }
         
         # Prepare the authorization header
+        # Ensure token is properly formatted
+        token = self.credentials.token.strip()
+        
         headers = {
-            "Authorization": f"Bearer {self.credentials.token}",
+            "Authorization": f"Bearer {token}",
             "developer-token": self.developer_token,
             "Content-Type": "application/json"
         }
@@ -280,7 +296,7 @@ refresh_token: {refresh_token}
         
         # Log headers (without sensitive information)
         safe_headers = headers.copy()
-        safe_headers["Authorization"] = "Bearer [REDACTED]"
+        safe_headers["Authorization"] = f"Bearer {token[:5]}..." if len(token) > 5 else "Bearer [REDACTED]"
         safe_headers["developer-token"] = "[REDACTED]"
         logging.info(f"Request headers: {safe_headers}")
         
@@ -295,6 +311,17 @@ refresh_token: {refresh_token}
         if response.status_code != 200:
             error_msg = f"Google Ads REST API request failed with status {response.status_code}: {response.text}"
             logging.error(error_msg)
+            
+            # Check for token-related errors
+            if response.status_code == 401:
+                logging.error("Authentication error detected. Token might be invalid.")
+                # Try to extract more detailed error information
+                try:
+                    error_data = response.json()
+                    logging.error(f"Authentication error details: {json.dumps(error_data, indent=2)}")
+                except:
+                    logging.error("Could not parse error response as JSON")
+            
             raise Exception(error_msg)
         
         # Parse the response
