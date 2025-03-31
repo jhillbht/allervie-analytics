@@ -12,17 +12,27 @@ class GoogleAdsAnalytics:
     
     def __init__(self, credentials, customer_id, developer_token):
         """Initialize with OAuth credentials and Google Ads account info"""
-        self.customer_id = customer_id
+        # Ensure customer_id is properly formatted (no dashes or other formatting)
+        # Strip any non-numeric characters
+        self.customer_id = str(customer_id).replace('-', '').strip()
+        logging.info(f"Using Google Ads customer_id: {self.customer_id}")
+        
         self.developer_token = developer_token
         self.credentials = credentials
         
         # Ensure credentials are fresh
         if self.credentials.expired and self.credentials.refresh_token:
             logging.info("Refreshing expired OAuth credentials")
-            self.credentials.refresh(Request())
+            try:
+                self.credentials.refresh(Request())
+                logging.info("Successfully refreshed OAuth credentials")
+            except Exception as e:
+                logging.error(f"Failed to refresh OAuth credentials: {str(e)}")
+                raise Exception(f"OAuth token refresh failed: {str(e)}")
         
         # Path to the YAML configuration file
         yaml_path = os.path.join(os.getcwd(), "google-ads.yaml")
+        logging.info(f"YAML configuration path: {yaml_path}")
         
         # Set configuration file path
         os.environ["GOOGLE_ADS_CONFIGURATION_FILE_PATH"] = yaml_path
@@ -71,6 +81,8 @@ refresh_token: {refresh_token}
             # Write the YAML file
             with open(yaml_path, 'w') as file:
                 file.write(yaml_content)
+                
+            logging.info(f"Created new YAML configuration file with refresh_token")
             return
         
         # Read the YAML file
@@ -140,6 +152,9 @@ refresh_token: {refresh_token}
         """
         
         try:
+            # Log the customer ID being used
+            logging.info(f"Executing GRPC query for customer_id: {self.customer_id}")
+            
             # Execute the query
             response = ga_service.search(
                 customer_id=self.customer_id,
@@ -195,7 +210,12 @@ refresh_token: {refresh_token}
         # Make sure the credentials are fresh
         if self.credentials.expired and self.credentials.refresh_token:
             logging.info("Refreshing expired OAuth credentials for REST API")
-            self.credentials.refresh(Request())
+            try:
+                self.credentials.refresh(Request())
+                logging.info("Successfully refreshed OAuth credentials for REST API")
+            except Exception as e:
+                logging.error(f"Failed to refresh OAuth credentials: {str(e)}")
+                raise Exception(f"OAuth token refresh failed for REST API: {str(e)}")
         
         # Prepare the Google Ads REST API request
         # Use v19 which is the current version as of March 2025
@@ -239,8 +259,8 @@ refresh_token: {refresh_token}
         }
         
         # Add login-customer-id header if necessary
-        if self.customer_id:
-            headers["login-customer-id"] = self.customer_id
+        # Only needed for manager accounts
+        headers["login-customer-id"] = str(self.customer_id).replace('-', '').strip()
         
         # Log headers (without sensitive information)
         safe_headers = headers.copy()
@@ -251,6 +271,9 @@ refresh_token: {refresh_token}
         # Make the request
         logging.info(f"Making REST API request to Google Ads")
         response = requests.post(base_url, headers=headers, json=request_data)
+        
+        # Log the response status
+        logging.info(f"REST API response status: {response.status_code}")
         
         # Check if the request was successful
         if response.status_code != 200:

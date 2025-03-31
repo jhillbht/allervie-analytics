@@ -196,21 +196,34 @@ def ads_campaigns():
         # Check if token is expired and refresh it
         if credentials.expired and credentials.refresh_token:
             logger.info("Refreshing expired OAuth token")
-            credentials.refresh(Request())
-            
-            # Update session with refreshed credentials
-            session['credentials'] = {
-                'token': credentials.token,
-                'refresh_token': credentials.refresh_token,
-                'token_uri': credentials.token_uri,
-                'client_id': credentials.client_id,
-                'client_secret': credentials.client_secret,
-                'scopes': credentials.scopes
-            }
-            logger.info("Updated session with refreshed credentials")
+            try:
+                credentials.refresh(Request())
+                logger.info("Successfully refreshed OAuth token")
+                
+                # Update session with refreshed credentials
+                session['credentials'] = {
+                    'token': credentials.token,
+                    'refresh_token': credentials.refresh_token,
+                    'token_uri': credentials.token_uri,
+                    'client_id': credentials.client_id,
+                    'client_secret': credentials.client_secret,
+                    'scopes': credentials.scopes
+                }
+                logger.info("Updated session with refreshed credentials")
+            except Exception as refresh_error:
+                logger.error(f"Error refreshing OAuth token: {str(refresh_error)}")
+                logger.error(traceback.format_exc())
+                return jsonify({
+                    'success': False,
+                    'error': f"Failed to refresh OAuth token: {str(refresh_error)}. Please log out and log in again."
+                }), 401
         
         # Get Google Ads configuration
         customer_id = current_app.config['GOOGLE_ADS_CUSTOMER_ID']
+        # Format customer ID properly (remove quotes and other non-numeric characters)
+        customer_id = str(customer_id).replace('-', '').strip().replace('"', '').replace("'", "")
+        logger.info(f"Using Google Ads Customer ID: {customer_id}")
+        
         developer_token = current_app.config['GOOGLE_ADS_DEVELOPER_TOKEN']
         
         # Log the access attempt (without sensitive info)
