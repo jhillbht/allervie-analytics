@@ -24,12 +24,27 @@ async function initializeCharts() {
     // Default to 30 days
     const days = 30;
     
-    // Initialize charts in parallel
-    await Promise.all([
-        initActiveUsersChart(days),
-        initTrafficSourcesChart(days),
-        initCampaignPerformanceChart(days)
-    ]);
+    // Initialize charts in parallel with proper error handling
+    try {
+        await Promise.all([
+            initActiveUsersChart(days).catch(handleChartError('active-users-chart')),
+            initTrafficSourcesChart(days).catch(handleChartError('traffic-sources-chart')),
+            initCampaignPerformanceChart(days).catch(handleChartError('campaign-performance-chart'))
+        ]);
+    } catch (error) {
+        console.error('Error initializing charts:', error);
+    }
+}
+
+/**
+ * Handle chart loading errors
+ */
+function handleChartError(chartId) {
+    return function(error) {
+        console.error(`Failed to load ${chartId}:`, error);
+        const container = document.getElementById(chartId).parentNode;
+        container.innerHTML = `<div class="error-message">Failed to load chart: ${error.message || 'Unknown error'}</div>`;
+    };
 }
 
 /**
@@ -37,11 +52,15 @@ async function initializeCharts() {
  */
 async function updateCharts(days) {
     // Update all charts with new data
-    await Promise.all([
-        updateActiveUsersChart(days),
-        updateTrafficSourcesChart(days),
-        updateCampaignPerformanceChart(days)
-    ]);
+    try {
+        await Promise.all([
+            updateActiveUsersChart(days).catch(handleChartError('active-users-chart')),
+            updateTrafficSourcesChart(days).catch(handleChartError('traffic-sources-chart')),
+            updateCampaignPerformanceChart(days).catch(handleChartError('campaign-performance-chart'))
+        ]);
+    } catch (error) {
+        console.error('Error updating charts:', error);
+    }
 }
 
 /**
@@ -54,11 +73,15 @@ async function initActiveUsersChart(days) {
         const result = await response.json();
         
         if (!result.success) {
-            throw new Error(result.error);
+            throw new Error(result.error || 'Failed to load active users data');
         }
         
         // Format the data
-        const data = result.data;
+        const data = result.data || [];
+        
+        if (data.length === 0) {
+            throw new Error('No active users data available');
+        }
         
         // Sort data by date
         data.sort((a, b) => {
@@ -125,8 +148,7 @@ async function initActiveUsersChart(days) {
         });
     } catch (error) {
         console.error('Failed to initialize active users chart:', error);
-        const container = document.getElementById('active-users-chart').parentNode;
-        container.innerHTML = `<div class="error-message">Failed to load chart: ${error.message}</div>`;
+        throw error;
     }
 }
 
@@ -140,11 +162,15 @@ async function initTrafficSourcesChart(days) {
         const result = await response.json();
         
         if (!result.success) {
-            throw new Error(result.error);
+            throw new Error(result.error || 'Failed to load traffic sources data');
         }
         
         // Format the data
-        const data = result.data;
+        const data = result.data || [];
+        
+        if (data.length === 0) {
+            throw new Error('No traffic sources data available');
+        }
         
         // Sort data by sessions (descending)
         data.sort((a, b) => b.sessions - a.sessions);
@@ -188,8 +214,7 @@ async function initTrafficSourcesChart(days) {
         });
     } catch (error) {
         console.error('Failed to initialize traffic sources chart:', error);
-        const container = document.getElementById('traffic-sources-chart').parentNode;
-        container.innerHTML = `<div class="error-message">Failed to load chart: ${error.message}</div>`;
+        throw error;
     }
 }
 
@@ -203,11 +228,15 @@ async function initCampaignPerformanceChart(days) {
         const result = await response.json();
         
         if (!result.success) {
-            throw new Error(result.error);
+            throw new Error(result.error || 'Failed to load campaign data');
         }
         
         // Format the data
-        const data = result.data;
+        const data = result.data || [];
+        
+        if (data.length === 0) {
+            throw new Error('No campaign data available');
+        }
         
         // Sort data by impressions (descending)
         data.sort((a, b) => b.impressions - a.impressions);
@@ -275,8 +304,7 @@ async function initCampaignPerformanceChart(days) {
         });
     } catch (error) {
         console.error('Failed to initialize campaign performance chart:', error);
-        const container = document.getElementById('campaign-performance-chart').parentNode;
-        container.innerHTML = `<div class="error-message">Failed to load chart: ${error.message}</div>`;
+        throw error;
     }
 }
 
@@ -290,11 +318,15 @@ async function updateActiveUsersChart(days) {
         const result = await response.json();
         
         if (!result.success) {
-            throw new Error(result.error);
+            throw new Error(result.error || 'Failed to update active users data');
         }
         
         // Format the data
-        const data = result.data;
+        const data = result.data || [];
+        
+        if (data.length === 0) {
+            throw new Error('No active users data available');
+        }
         
         // Sort data by date
         data.sort((a, b) => {
@@ -315,6 +347,7 @@ async function updateActiveUsersChart(days) {
         activeUsersChart.update();
     } catch (error) {
         console.error('Failed to update active users chart:', error);
+        throw error;
     }
 }
 
@@ -328,11 +361,15 @@ async function updateTrafficSourcesChart(days) {
         const result = await response.json();
         
         if (!result.success) {
-            throw new Error(result.error);
+            throw new Error(result.error || 'Failed to update traffic sources data');
         }
         
         // Format the data
-        const data = result.data;
+        const data = result.data || [];
+        
+        if (data.length === 0) {
+            throw new Error('No traffic sources data available');
+        }
         
         // Sort data by sessions (descending)
         data.sort((a, b) => b.sessions - a.sessions);
@@ -352,6 +389,7 @@ async function updateTrafficSourcesChart(days) {
         trafficSourcesChart.update();
     } catch (error) {
         console.error('Failed to update traffic sources chart:', error);
+        throw error;
     }
 }
 
@@ -365,11 +403,15 @@ async function updateCampaignPerformanceChart(days) {
         const result = await response.json();
         
         if (!result.success) {
-            throw new Error(result.error);
+            throw new Error(result.error || 'Failed to update campaign data');
         }
         
         // Format the data
-        const data = result.data;
+        const data = result.data || [];
+        
+        if (data.length === 0) {
+            throw new Error('No campaign data available');
+        }
         
         // Sort data by impressions (descending)
         data.sort((a, b) => b.impressions - a.impressions);
@@ -393,6 +435,7 @@ async function updateCampaignPerformanceChart(days) {
         campaignPerformanceChart.update();
     } catch (error) {
         console.error('Failed to update campaign performance chart:', error);
+        throw error;
     }
 }
 
@@ -400,28 +443,42 @@ async function updateCampaignPerformanceChart(days) {
  * Helper function to format date from YYYYmmdd to readable format
  */
 function formatDate(dateString) {
-    // Convert from YYYYmmdd to YYYY-mm-dd
-    const year = dateString.substring(0, 4);
-    const month = dateString.substring(4, 6);
-    const day = dateString.substring(6, 8);
+    if (!dateString) return '';
     
-    // Create date object
-    const date = new Date(`${year}-${month}-${day}`);
-    
-    // Format to readable string
-    return date.toLocaleDateString('en-US', { 
-        month: 'short', 
-        day: 'numeric'
-    });
+    try {
+        // Convert from YYYYmmdd to YYYY-mm-dd
+        const year = dateString.substring(0, 4);
+        const month = dateString.substring(4, 6);
+        const day = dateString.substring(6, 8);
+        
+        // Create date object
+        const date = new Date(`${year}-${month}-${day}`);
+        
+        // Format to readable string
+        return date.toLocaleDateString('en-US', { 
+            month: 'short', 
+            day: 'numeric'
+        });
+    } catch (e) {
+        console.error('Error formatting date:', dateString, e);
+        return dateString; // Return original string if parsing fails
+    }
 }
 
 /**
  * Helper function to format date from YYYYmmdd to YYYY-mm-dd
  */
 function formatDateString(dateString) {
-    const year = dateString.substring(0, 4);
-    const month = dateString.substring(4, 6);
-    const day = dateString.substring(6, 8);
+    if (!dateString) return '';
     
-    return `${year}-${month}-${day}`;
+    try {
+        const year = dateString.substring(0, 4);
+        const month = dateString.substring(4, 6);
+        const day = dateString.substring(6, 8);
+        
+        return `${year}-${month}-${day}`;
+    } catch (e) {
+        console.error('Error formatting date string:', dateString, e);
+        return dateString; // Return original string if parsing fails
+    }
 }

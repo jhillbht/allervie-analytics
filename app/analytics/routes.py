@@ -33,8 +33,8 @@ def active_users():
         start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
         end_date = datetime.now().strftime('%Y-%m-%d')
         
-        # Define request
-        request = RunReportRequest(
+        # Define API request
+        ga_request = RunReportRequest(
             property=f'properties/{property_id}',
             dimensions=[Dimension(name="date")],
             metrics=[
@@ -50,7 +50,7 @@ def active_users():
         )
         
         # Execute request
-        response = client.run_report(request)
+        response = client.run_report(ga_request)
         
         # Format response data
         data = []
@@ -68,6 +68,7 @@ def active_users():
         })
     except Exception as e:
         # Handle errors
+        current_app.logger.error(f"Active users error: {str(e)}")
         return jsonify({
             'success': False,
             'error': str(e)
@@ -98,8 +99,8 @@ def traffic_sources():
         start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
         end_date = datetime.now().strftime('%Y-%m-%d')
         
-        # Define request
-        request = RunReportRequest(
+        # Define API request
+        ga_request = RunReportRequest(
             property=f'properties/{property_id}',
             dimensions=[Dimension(name="sessionSource")],
             metrics=[
@@ -115,7 +116,7 @@ def traffic_sources():
         )
         
         # Execute request
-        response = client.run_report(request)
+        response = client.run_report(ga_request)
         
         # Format response data
         data = []
@@ -133,6 +134,7 @@ def traffic_sources():
         })
     except Exception as e:
         # Handle errors
+        current_app.logger.error(f"Traffic sources error: {str(e)}")
         return jsonify({
             'success': False,
             'error': str(e)
@@ -156,8 +158,8 @@ def ads_campaigns():
         customer_id = current_app.config['GOOGLE_ADS_CUSTOMER_ID']
         developer_token = current_app.config['GOOGLE_ADS_DEVELOPER_TOKEN']
         
-        # Create Google Ads client
-        client = GoogleAdsClient.load_from_dict({
+        # Create Google Ads client with direct dictionary configuration
+        client_config = {
             "credentials": {
                 "refresh_token": credentials.refresh_token,
                 "client_id": credentials.client_id,
@@ -166,7 +168,14 @@ def ads_campaigns():
             },
             "developer_token": developer_token,
             "use_proto_plus": True
-        })
+        }
+        
+        # Log configuration if in debug mode
+        if current_app.config['DEBUG']:
+            current_app.logger.info(f"Google Ads client configuration: {client_config}")
+        
+        # Create Google Ads client
+        client = GoogleAdsClient.load_from_dict(client_config)
         
         # Get Google Ads service
         ga_service = client.get_service("GoogleAdsService")
@@ -239,12 +248,14 @@ def ads_campaigns():
                 for field_path_element in error.location.field_path_elements:
                     error_message.append(f"\tOn field: {field_path_element.field_name}")
             
+        current_app.logger.error(f"Google Ads error: {' '.join(error_message)}")
         return jsonify({
             'success': False,
             'error': '\n'.join(error_message)
         }), 500
     except Exception as e:
         # Handle other errors
+        current_app.logger.error(f"Campaign performance error: {str(e)}")
         return jsonify({
             'success': False,
             'error': str(e)

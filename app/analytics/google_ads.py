@@ -1,6 +1,8 @@
 from google.ads.googleads.client import GoogleAdsClient
 from google.ads.googleads.errors import GoogleAdsException
 from datetime import datetime, timedelta
+import os
+import logging
 
 class GoogleAdsAnalytics:
     """Google Ads API integration"""
@@ -9,6 +11,9 @@ class GoogleAdsAnalytics:
         """Initialize with OAuth credentials and Google Ads account info"""
         self.customer_id = customer_id
         self.developer_token = developer_token
+        
+        # Set environment variable for OAuth2
+        os.environ['GOOGLE_ADS_YAML_CONFIG_PATH'] = None
         
         # Create Google Ads Client
         self.client = GoogleAdsClient.load_from_dict({
