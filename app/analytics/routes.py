@@ -5,6 +5,7 @@ from google.analytics.data_v1beta.types import RunReportRequest, DateRange, Dime
 from datetime import datetime, timedelta
 from google.ads.googleads.client import GoogleAdsClient
 from google.ads.googleads.errors import GoogleAdsException
+import os
 
 analytics_bp = Blueprint('analytics', __name__)
 
@@ -158,7 +159,11 @@ def ads_campaigns():
         customer_id = current_app.config['GOOGLE_ADS_CUSTOMER_ID']
         developer_token = current_app.config['GOOGLE_ADS_DEVELOPER_TOKEN']
         
-        # Create Google Ads client with direct dictionary configuration
+        # Ensure no YAML config file is used
+        os.environ["GOOGLE_ADS_CONFIGURATION_FILE_PATH"] = ""
+        os.environ["GOOGLE_ADS_YAML_CONFIG_PATH"] = ""
+        
+        # Directly create client configuration dictionary
         client_config = {
             "credentials": {
                 "refresh_token": credentials.refresh_token,
@@ -167,12 +172,14 @@ def ads_campaigns():
                 "token_uri": credentials.token_uri
             },
             "developer_token": developer_token,
-            "use_proto_plus": True
+            "use_proto_plus": True,
+            "login_customer_id": customer_id
         }
         
         # Log configuration if in debug mode
         if current_app.config['DEBUG']:
-            current_app.logger.info(f"Google Ads client configuration: {client_config}")
+            current_app.logger.info(f"Google Ads client configuration keys: {list(client_config.keys())}")
+            current_app.logger.info(f"Credentials keys: {list(client_config['credentials'].keys())}")
         
         # Create Google Ads client
         client = GoogleAdsClient.load_from_dict(client_config)

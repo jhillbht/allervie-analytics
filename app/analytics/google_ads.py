@@ -12,11 +12,12 @@ class GoogleAdsAnalytics:
         self.customer_id = customer_id
         self.developer_token = developer_token
         
-        # Set environment variable for OAuth2
-        os.environ['GOOGLE_ADS_YAML_CONFIG_PATH'] = None
+        # Ensure no YAML config file is used
+        os.environ["GOOGLE_ADS_CONFIGURATION_FILE_PATH"] = ""
+        os.environ["GOOGLE_ADS_YAML_CONFIG_PATH"] = ""
         
-        # Create Google Ads Client
-        self.client = GoogleAdsClient.load_from_dict({
+        # Create Google Ads Client configuration
+        client_config = {
             "credentials": {
                 "refresh_token": credentials.refresh_token,
                 "client_id": credentials.client_id,
@@ -24,8 +25,12 @@ class GoogleAdsAnalytics:
                 "token_uri": credentials.token_uri
             },
             "developer_token": developer_token,
-            "use_proto_plus": True
-        })
+            "use_proto_plus": True,
+            "login_customer_id": customer_id
+        }
+        
+        # Create Google Ads Client
+        self.client = GoogleAdsClient.load_from_dict(client_config)
     
     def get_campaign_performance(self, days=30):
         """Get campaign performance data for the specified number of days"""
