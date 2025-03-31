@@ -42,24 +42,16 @@ def login():
     if current_app.config['DEBUG']:
         os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
     
-    # Add a timestamp parameter to avoid cache issues
-    timestamp = int(time.time())
-    
-    # Generate authorization URL with explicit prompt for consent and additional parameters
-    # This ensures we always get the refresh token and avoid caching issues
+    # Generate authorization URL with explicit prompt for consent
+    # This ensures we always get the refresh token which is required for OAuth to work
     authorization_url, state = flow.authorization_url(
-        access_type='offline',                # Request a refresh token
-        include_granted_scopes='true',        # Include previously granted scopes
-        prompt='consent',                     # Always show consent screen to get refresh token
-        approval_prompt='force',              # Force approval prompt
-        login_hint='',                        # Clear any previous login hints
-        state=f"{state}-{timestamp}"          # Add timestamp to state to avoid caching
+        access_type='offline',       # Request a refresh token
+        include_granted_scopes='true', # Include previously granted scopes
+        prompt='consent'            # Always show consent screen to get refresh token
     )
     
     # Store state for CSRF protection
-    session['oauth_state'] = f"{state}-{timestamp}"
-    
-    logger.info(f"Starting OAuth flow with scopes: {current_app.config['SCOPES']}")
+    session['oauth_state'] = state
     
     return redirect(authorization_url)
 
@@ -79,18 +71,10 @@ def callback():
         logger.error("OAuth callback missing code or state parameters")
         return redirect(url_for('main.index'))
     
-    # Verify state for CSRF protection - extract the state part without the timestamp
-    session_state = session.get('oauth_state', '')
-    received_state = state
-    
-    # Both could have the timestamp, so we need to handle both cases
-    if '-' in session_state and '-' in received_state:
-        session_state = session_state.split('-')[0]
-        received_state = received_state.split('-')[0]
-    
-    if received_state != session_state:
+    # Verify state for CSRF protection
+    if state != session.get('oauth_state'):
         flash('Authentication failed: invalid state', 'error')
-        logger.error(f"OAuth state mismatch. Received: {received_state}, Expected: {session_state}")
+        logger.error(f"OAuth state mismatch. Received: {state}, Expected: {session.get('oauth_state')}")
         return redirect(url_for('main.index'))
     
     # Exchange code for credentials
@@ -116,8 +100,6 @@ def callback():
         
         # Log detailed token info for debugging
         credentials = flow.credentials
-        logger.info(f"Token type: {token_response.get('token_type', 'unknown')}")
-        logger.info(f"Refresh token present: {'Yes' if credentials.refresh_token else 'No'}")
         
         # Check for required scopes
         received_scopes = set(credentials.scopes)

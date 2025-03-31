@@ -5,7 +5,6 @@ import os
 import logging
 import json
 import requests
-import yaml
 from google.auth.transport.requests import Request
 
 class GoogleAdsAnalytics:
@@ -73,20 +72,28 @@ class GoogleAdsAnalytics:
     
     def _update_yaml_config(self, yaml_path):
         """Create or update the YAML configuration file with the latest credentials"""
-        # Prepare the configuration
-        config = {
-            'developer_token': self.developer_token,
-            'login_customer_id': self.customer_id,
-            'linked_customer_id': self.customer_id,
-            'use_proto_plus': True,
-            'client_id': self.credentials.client_id,
-            'client_secret': self.credentials.client_secret,
-            'refresh_token': self.credentials.refresh_token,
-            'api_version': 'v19'  # Current version as of March 2025
-        }
-        
-        # Dump to YAML format
-        yaml_content = yaml.dump(config, default_flow_style=False)
+        # Create a simple YAML file manually (without pyyaml)
+        yaml_content = f"""# Google Ads API Configuration
+
+developer_token: {self.developer_token}
+
+# Required for manager accounts only: Specify the login customer ID used to authenticate API calls.
+login_customer_id: {self.customer_id}
+
+# Required for manager accounts only: Specify the linked customer ID.
+linked_customer_id: {self.customer_id}
+
+# API Version (using v19 as of March 2025)
+api_version: v19
+
+# OAuth2 configuration
+use_proto_plus: True
+
+# Configure OAuth2 installed application flow (non-service account)
+client_id: {self.credentials.client_id}
+client_secret: {self.credentials.client_secret}
+refresh_token: {self.credentials.refresh_token}
+"""
         
         # Write to file
         with open(yaml_path, 'w') as file:

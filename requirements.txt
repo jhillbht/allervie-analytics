@@ -15,6 +15,3 @@ google-ads==22.1.0
 # Data processing
 pandas==2.1.1
 numpy==1.26.0
-
-# YAML for Google Ads configuration
-pyyaml==6.0
