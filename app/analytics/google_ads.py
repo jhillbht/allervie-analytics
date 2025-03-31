@@ -5,6 +5,7 @@ import os
 import logging
 import json
 import requests
+import yaml
 from google.auth.transport.requests import Request
 
 class GoogleAdsAnalytics:
@@ -12,10 +13,10 @@ class GoogleAdsAnalytics:
     
     def __init__(self, credentials, customer_id, developer_token):
         """Initialize with OAuth credentials and Google Ads account info"""
-        # Check if customer_id matches the MCC ID format (from the second image)
+        # Check if customer_id matches the MCC ID format
         # If it matches the old incorrect ID, use the MCC ID instead
         if str(customer_id).strip() == "8437927403":
-            customer_id = "5686645688"  # AllerVie MCC ID from the second image
+            customer_id = "5686645688"  # AllerVie MCC ID
             logging.warning(f"Replaced incorrect customer ID with MCC ID: {customer_id}")
             
         # Ensure customer_id is properly formatted (no dashes or other formatting)
@@ -35,14 +36,20 @@ class GoogleAdsAnalytics:
                 logging.error(f"Failed to refresh OAuth credentials: {str(e)}")
                 raise Exception(f"OAuth token refresh failed: {str(e)}")
         
-        # Log token info (first few characters only for security)
-        if self.credentials.token:
-            token_preview = self.credentials.token[:10] + "..." if len(self.credentials.token) > 10 else "..."
-            logging.info(f"OAuth token length: {len(self.credentials.token)}, preview: {token_preview}")
-        else:
+        # Verify token is valid
+        if not self.credentials.token:
             logging.error("OAuth token is missing or empty")
             raise Exception("OAuth token is missing, please log out and log in again")
         
+        # Log token info (first few characters only for security)
+        token_preview = "..." if not self.credentials.token else (self.credentials.token[:5] + "..." if len(self.credentials.token) > 5 else "...")
+        logging.info(f"OAuth token present, length: {len(str(self.credentials.token))}, preview: {token_preview}")
+        
+        # Check for Google Ads API scope
+        if 'https://www.googleapis.com/auth/adwords' not in self.credentials.scopes:
+            logging.error(f"Missing required Google Ads API scope, available scopes: {self.credentials.scopes}")
+            raise Exception("Missing required Google Ads API permissions. Please log out and log in again.")
+            
         # Path to the YAML configuration file
         yaml_path = os.path.join(os.getcwd(), "google-ads.yaml")
         logging.info(f"YAML configuration path: {yaml_path}")
@@ -50,8 +57,8 @@ class GoogleAdsAnalytics:
         # Set configuration file path
         os.environ["GOOGLE_ADS_CONFIGURATION_FILE_PATH"] = yaml_path
         
-        # Update the refresh_token in the YAML configuration
-        self._update_refresh_token(yaml_path, credentials.refresh_token)
+        # Create or update the YAML configuration
+        self._update_yaml_config(yaml_path)
         
         # Try to create Google Ads Client
         try:
@@ -64,74 +71,28 @@ class GoogleAdsAnalytics:
             logging.info("Will use REST API fallback for Google Ads")
             self.use_rest_fallback = True
     
-    def _update_refresh_token(self, yaml_path, refresh_token):
-        """Update the refresh_token in the YAML configuration file"""
-        if not os.path.exists(yaml_path):
-            # Create a new YAML file if it doesn't exist
-            logging.info(f"Creating new Google Ads YAML configuration file at {yaml_path}")
-            yaml_content = f"""# Google Ads API Configuration
-
-developer_token: {self.developer_token}
-
-# Required for manager accounts only: Specify the login customer ID used to authenticate API calls.
-login_customer_id: {self.customer_id}
-
-# Required for manager accounts only: Specify the linked customer ID.
-linked_customer_id: {self.customer_id}
-
-# API Version (using v19 as of March 2025)
-api_version: v19
-
-# OAuth2 configuration
-use_proto_plus: True
-
-# Configure OAuth2 installed application flow (non-service account)
-client_id: {self.credentials.client_id}
-client_secret: {self.credentials.client_secret}
-refresh_token: {refresh_token}
-"""
-            
-            # Write the YAML file
-            with open(yaml_path, 'w') as file:
-                file.write(yaml_content)
-                
-            logging.info(f"Created new YAML configuration file with refresh_token")
-            return
+    def _update_yaml_config(self, yaml_path):
+        """Create or update the YAML configuration file with the latest credentials"""
+        # Prepare the configuration
+        config = {
+            'developer_token': self.developer_token,
+            'login_customer_id': self.customer_id,
+            'linked_customer_id': self.customer_id,
+            'use_proto_plus': True,
+            'client_id': self.credentials.client_id,
+            'client_secret': self.credentials.client_secret,
+            'refresh_token': self.credentials.refresh_token,
+            'api_version': 'v19'  # Current version as of March 2025
+        }
         
-        # Read the YAML file
-        with open(yaml_path, 'r') as file:
-            yaml_content = file.read()
+        # Dump to YAML format
+        yaml_content = yaml.dump(config, default_flow_style=False)
         
-        # Update login_customer_id and linked_customer_id to ensure they match
-        import re
-        yaml_content = re.sub(
-            r'login_customer_id:.*', 
-            f'login_customer_id: {self.customer_id}',
-            yaml_content
-        )
-        yaml_content = re.sub(
-            r'linked_customer_id:.*', 
-            f'linked_customer_id: {self.customer_id}',
-            yaml_content
-        )
-        
-        # Check if refresh_token needs to be added or updated
-        if 'refresh_token:' not in yaml_content:
-            # Add refresh_token at the end of the file
-            yaml_content += f"\nrefresh_token: {refresh_token}\n"
-        else:
-            # Replace existing refresh_token
-            yaml_content = re.sub(
-                r'refresh_token:.*', 
-                f'refresh_token: {refresh_token}',
-                yaml_content
-            )
-        
-        # Write the updated YAML file
+        # Write to file
         with open(yaml_path, 'w') as file:
             file.write(yaml_content)
         
-        logging.info(f"Updated refresh_token and customer IDs in {yaml_path}")
+        logging.info(f"Updated YAML configuration file at {yaml_path}")
     
     def get_campaign_performance(self, days=30):
         """Get campaign performance data for the specified number of days"""
@@ -248,8 +209,7 @@ refresh_token: {refresh_token}
             raise Exception("OAuth token is missing for REST API call")
         
         # Prepare the Google Ads REST API request
-        # Use v19 which is the current version as of March 2025
-        api_version = "v19"
+        api_version = "v19"  # Current version as of March 2025
         
         # Use correct endpoint format:
         # https://googleads.googleapis.com/{version}/customers/{customer_id}/googleAds:search
@@ -281,13 +241,13 @@ refresh_token: {refresh_token}
             "query": query
         }
         
-        # Prepare the authorization header
-        # Ensure token is properly formatted
+        # Prepare the authorization header with token trimming to avoid malformation
+        # This is critical for avoiding OAUTH_TOKEN_HEADER_INVALID errors
         token = self.credentials.token.strip()
         
         headers = {
             "Authorization": f"Bearer {token}",
-            "developer-token": self.developer_token,
+            "developer-token": self.developer_token.strip(),
             "Content-Type": "application/json"
         }
         
@@ -296,74 +256,81 @@ refresh_token: {refresh_token}
         
         # Log headers (without sensitive information)
         safe_headers = headers.copy()
-        safe_headers["Authorization"] = f"Bearer {token[:5]}..." if len(token) > 5 else "Bearer [REDACTED]"
+        safe_headers["Authorization"] = f"Bearer {token[:3]}..." if len(token) > 3 else "Bearer [REDACTED]"
         safe_headers["developer-token"] = "[REDACTED]"
         logging.info(f"Request headers: {safe_headers}")
         
         # Make the request
         logging.info(f"Making REST API request to Google Ads")
-        response = requests.post(base_url, headers=headers, json=request_data)
-        
-        # Log the response status
-        logging.info(f"REST API response status: {response.status_code}")
-        
-        # Check if the request was successful
-        if response.status_code != 200:
-            error_msg = f"Google Ads REST API request failed with status {response.status_code}: {response.text}"
-            logging.error(error_msg)
+        try:
+            response = requests.post(base_url, headers=headers, json=request_data)
             
-            # Check for token-related errors
-            if response.status_code == 401:
-                logging.error("Authentication error detected. Token might be invalid.")
-                # Try to extract more detailed error information
+            # Log the response status
+            logging.info(f"REST API response status: {response.status_code}")
+            
+            # Check if the request was successful
+            if response.status_code != 200:
+                # Log the response text for debugging
                 try:
-                    error_data = response.json()
-                    logging.error(f"Authentication error details: {json.dumps(error_data, indent=2)}")
-                except:
-                    logging.error("Could not parse error response as JSON")
-            
-            raise Exception(error_msg)
-        
-        # Parse the response
-        response_data = response.json()
-        
-        # Log the success
-        logging.info("Successfully received response from Google Ads REST API")
-        
-        # Process the results
-        results = []
-        
-        if "results" in response_data:
-            for result in response_data["results"]:
-                # Extract the data from the result
-                campaign_id = result.get("campaign", {}).get("id")
-                campaign_name = result.get("campaign", {}).get("name")
-                campaign_status = result.get("campaign", {}).get("status")
+                    error_msg = f"Google Ads REST API request failed with status {response.status_code}: {response.text}"
+                    logging.error(error_msg)
+                    
+                    # Parse JSON response if possible
+                    error_data = json.loads(response.text)
+                    logging.error(f"Error details: {json.dumps(error_data, indent=2)}")
+                    
+                    if response.status_code == 401:
+                        error_msg = "Authentication error with Google Ads API. Please log out and log in again."
+                    
+                except json.JSONDecodeError:
+                    logging.error(f"Could not parse error response as JSON: {response.text}")
                 
-                metrics = result.get("metrics", {})
-                impressions = float(metrics.get("impressions", 0))
-                clicks = float(metrics.get("clicks", 0))
-                cost_micros = float(metrics.get("costMicros", 0))
-                conversions = float(metrics.get("conversions", 0))
-                conversions_value = float(metrics.get("conversionsValue", 0))
-                ctr = float(metrics.get("ctr", 0)) * 100  # Convert to percentage
-                average_cpc = float(metrics.get("averageCpc", 0)) / 1000000  # Convert micros to standard currency
-                
-                # Format the data
-                results.append({
-                    'campaign_id': campaign_id,
-                    'campaign_name': campaign_name,
-                    'campaign_status': campaign_status,
-                    'impressions': impressions,
-                    'clicks': clicks,
-                    'cost': cost_micros / 1000000,  # Convert micros to standard currency
-                    'conversions': conversions,
-                    'conversion_value': conversions_value,
-                    'ctr': ctr,
-                    'average_cpc': average_cpc
-                })
-        
-        if not results:
-            logging.warning("No campaign data returned from Google Ads REST API")
+                raise Exception(error_msg)
             
-        return results
+            # Parse the response
+            response_data = response.json()
+            
+            # Log the success
+            logging.info("Successfully received response from Google Ads REST API")
+            
+            # Process the results
+            results = []
+            
+            if "results" in response_data:
+                for result in response_data["results"]:
+                    # Extract the data from the result
+                    campaign_id = result.get("campaign", {}).get("id")
+                    campaign_name = result.get("campaign", {}).get("name")
+                    campaign_status = result.get("campaign", {}).get("status")
+                    
+                    metrics = result.get("metrics", {})
+                    impressions = float(metrics.get("impressions", 0))
+                    clicks = float(metrics.get("clicks", 0))
+                    cost_micros = float(metrics.get("costMicros", 0))
+                    conversions = float(metrics.get("conversions", 0))
+                    conversions_value = float(metrics.get("conversionsValue", 0))
+                    ctr = float(metrics.get("ctr", 0)) * 100  # Convert to percentage
+                    average_cpc = float(metrics.get("averageCpc", 0)) / 1000000  # Convert micros to standard currency
+                    
+                    # Format the data
+                    results.append({
+                        'campaign_id': campaign_id,
+                        'campaign_name': campaign_name,
+                        'campaign_status': campaign_status,
+                        'impressions': impressions,
+                        'clicks': clicks,
+                        'cost': cost_micros / 1000000,  # Convert micros to standard currency
+                        'conversions': conversions,
+                        'conversion_value': conversions_value,
+                        'ctr': ctr,
+                        'average_cpc': average_cpc
+                    })
+            
+            if not results:
+                logging.warning("No campaign data returned from Google Ads REST API")
+                
+            return results
+            
+        except requests.exceptions.RequestException as e:
+            logging.error(f"Request error: {str(e)}")
+            raise Exception(f"Network error connecting to Google Ads API: {str(e)}")

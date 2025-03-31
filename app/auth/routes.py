@@ -1,13 +1,24 @@
 from flask import Blueprint, redirect, request, url_for, current_app, flash, session, render_template
 import os
+import time
 from google_auth_oauthlib.flow import Flow
 from google.oauth2.credentials import Credentials
+from google.auth.transport.requests import Request
+import logging
 
 auth_bp = Blueprint('auth', __name__)
+
+# Configure logger
+logger = logging.getLogger('allervie-analytics.auth')
 
 @auth_bp.route('/login')
 def login():
     """Start the OAuth flow by redirecting to Google's consent page"""
+    # Clear any existing credentials to ensure a fresh login
+    if 'credentials' in session:
+        del session['credentials']
+        logger.info("Cleared existing credentials for fresh login")
+    
     # Set environment variable to relax scope checking
     os.environ['OAUTHLIB_RELAX_TOKEN_SCOPE'] = '1'
     
@@ -31,16 +42,24 @@ def login():
     if current_app.config['DEBUG']:
         os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
     
-    # Generate authorization URL with explicit prompt for consent
-    # This ensures we always get the refresh token which is required for OAuth to work
+    # Add a timestamp parameter to avoid cache issues
+    timestamp = int(time.time())
+    
+    # Generate authorization URL with explicit prompt for consent and additional parameters
+    # This ensures we always get the refresh token and avoid caching issues
     authorization_url, state = flow.authorization_url(
-        access_type='offline',       # Request a refresh token
-        include_granted_scopes='true', # Include previously granted scopes
-        prompt='consent'            # Always show consent screen to get refresh token
+        access_type='offline',                # Request a refresh token
+        include_granted_scopes='true',        # Include previously granted scopes
+        prompt='consent',                     # Always show consent screen to get refresh token
+        approval_prompt='force',              # Force approval prompt
+        login_hint='',                        # Clear any previous login hints
+        state=f"{state}-{timestamp}"          # Add timestamp to state to avoid caching
     )
     
     # Store state for CSRF protection
-    session['oauth_state'] = state
+    session['oauth_state'] = f"{state}-{timestamp}"
+    
+    logger.info(f"Starting OAuth flow with scopes: {current_app.config['SCOPES']}")
     
     return redirect(authorization_url)
 
@@ -57,11 +76,21 @@ def callback():
     # Validate the request has both code and state
     if not code or not state:
         flash('Authentication failed: missing parameters', 'error')
+        logger.error("OAuth callback missing code or state parameters")
         return redirect(url_for('main.index'))
     
-    # Verify state for CSRF protection
-    if state != session.get('oauth_state'):
+    # Verify state for CSRF protection - extract the state part without the timestamp
+    session_state = session.get('oauth_state', '')
+    received_state = state
+    
+    # Both could have the timestamp, so we need to handle both cases
+    if '-' in session_state and '-' in received_state:
+        session_state = session_state.split('-')[0]
+        received_state = received_state.split('-')[0]
+    
+    if received_state != session_state:
         flash('Authentication failed: invalid state', 'error')
+        logger.error(f"OAuth state mismatch. Received: {received_state}, Expected: {session_state}")
         return redirect(url_for('main.index'))
     
     # Exchange code for credentials
@@ -80,33 +109,27 @@ def callback():
             state=state
         )
         flow.redirect_uri = current_app.config['REDIRECT_URI']
-        flow.fetch_token(code=code)
         
-        # Log the actual scopes returned if debugging is enabled
-        if current_app.config['DEBUG']:
-            current_app.logger.info(f"Requested scopes: {current_app.config['SCOPES']}")
-            current_app.logger.info(f"Actual scopes: {flow.credentials.scopes}")
-            
-            # Check for required Google Ads API scope
-            if 'https://www.googleapis.com/auth/adwords' not in flow.credentials.scopes:
-                current_app.logger.warning("Missing required Google Ads API scope in returned credentials")
-            
-            # Log token info (first few characters only for security)
-            if flow.credentials.token:
-                token_preview = flow.credentials.token[:10] + "..." if len(flow.credentials.token) > 10 else "..."
-                current_app.logger.info(f"OAuth token received, length: {len(flow.credentials.token)}, preview: {token_preview}")
-            else:
-                current_app.logger.error("OAuth token is missing or empty")
-            
-            # Log refresh token info (first few characters only for security)
-            if flow.credentials.refresh_token:
-                refresh_token_preview = flow.credentials.refresh_token[:5] + "..." if len(flow.credentials.refresh_token) > 5 else "..."
-                current_app.logger.info(f"Refresh token received, length: {len(flow.credentials.refresh_token)}, preview: {refresh_token_preview}")
-            else:
-                current_app.logger.error("Refresh token is missing. Make sure 'prompt=consent' is included in the authorization URL")
+        # Fetch token
+        token_response = flow.fetch_token(code=code)
+        logger.info("Successfully fetched OAuth tokens")
+        
+        # Log detailed token info for debugging
+        credentials = flow.credentials
+        logger.info(f"Token type: {token_response.get('token_type', 'unknown')}")
+        logger.info(f"Refresh token present: {'Yes' if credentials.refresh_token else 'No'}")
+        
+        # Check for required scopes
+        received_scopes = set(credentials.scopes)
+        required_scopes = {'https://www.googleapis.com/auth/adwords'}
+        missing_scopes = required_scopes - received_scopes
+        
+        if missing_scopes:
+            logger.error(f"Missing required scopes: {missing_scopes}")
+            flash(f"Authentication failed: Missing required Google Ads permissions. Please try again.", 'error')
+            return redirect(url_for('auth.login'))
             
         # Store credentials in session
-        credentials = flow.credentials
         session['credentials'] = {
             'token': credentials.token,
             'refresh_token': credentials.refresh_token,
@@ -116,11 +139,29 @@ def callback():
             'scopes': credentials.scopes
         }
         
+        # Force token refresh to ensure we have a fresh token
+        creds = Credentials(**session['credentials'])
+        if creds.expired:
+            logger.info("Refreshing expired token")
+            creds.refresh(Request())
+            
+            # Update session with refreshed credentials
+            session['credentials'] = {
+                'token': creds.token,
+                'refresh_token': creds.refresh_token,
+                'token_uri': creds.token_uri,
+                'client_id': creds.client_id,
+                'client_secret': creds.client_secret,
+                'scopes': creds.scopes
+            }
+            logger.info("Token successfully refreshed")
+        
         flash('Authentication successful!', 'success')
+        logger.info("OAuth authentication completed successfully")
+        
     except Exception as e:
         flash(f'Authentication failed: {str(e)}', 'error')
-        if current_app.config['DEBUG']:
-            current_app.logger.error(f"Authentication error: {str(e)}")
+        logger.error(f"Authentication error: {str(e)}")
     
     return redirect(url_for('main.index'))
 
@@ -130,6 +171,10 @@ def logout():
     # Clear credentials from session
     if 'credentials' in session:
         del session['credentials']
+        logger.info("User logged out, credentials cleared from session")
+    
+    # Clear any other session data
+    session.clear()
     
     flash('You have been logged out', 'info')
-    return redirect(url_for('main.index'))
+    return redirect(url_for('auth.login'))  # Redirect directly to login instead of index
