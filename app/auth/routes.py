@@ -8,6 +8,9 @@ auth_bp = Blueprint('auth', __name__)
 @auth_bp.route('/login')
 def login():
     """Start the OAuth flow by redirecting to Google's consent page"""
+    # Set environment variable to relax scope checking
+    os.environ['OAUTHLIB_RELAX_TOKEN_SCOPE'] = '1'
+    
     # Create OAuth flow instance
     flow = Flow.from_client_config(
         {
@@ -43,6 +46,9 @@ def login():
 @auth_bp.route('/callback')
 def callback():
     """Handle OAuth callback from Google"""
+    # Set environment variable to relax scope checking
+    os.environ['OAUTHLIB_RELAX_TOKEN_SCOPE'] = '1'
+    
     # Get authorization code from URL
     code = request.args.get('code')
     state = request.args.get('state')
@@ -75,6 +81,11 @@ def callback():
         flow.redirect_uri = current_app.config['REDIRECT_URI']
         flow.fetch_token(code=code)
         
+        # Log the actual scopes returned if debugging is enabled
+        if current_app.config['DEBUG']:
+            current_app.logger.info(f"Requested scopes: {current_app.config['SCOPES']}")
+            current_app.logger.info(f"Actual scopes: {flow.credentials.scopes}")
+            
         # Store credentials in session
         credentials = flow.credentials
         session['credentials'] = {
@@ -89,6 +100,8 @@ def callback():
         flash('Authentication successful!', 'success')
     except Exception as e:
         flash(f'Authentication failed: {str(e)}', 'error')
+        if current_app.config['DEBUG']:
+            current_app.logger.error(f"Authentication error: {str(e)}")
     
     return redirect(url_for('main.index'))
 

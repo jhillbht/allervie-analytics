@@ -2,6 +2,7 @@ from flask import Flask
 from flask_session import Session
 import os
 from datetime import timedelta
+import logging
 
 # Session configuration
 session = Session()
@@ -10,6 +11,13 @@ def create_app():
     app = Flask(__name__, 
                 static_folder='../static',
                 template_folder='../templates')
+    
+    # Configure logging
+    if os.environ.get('DEBUG', 'false').lower() == 'true':
+        app.logger.setLevel(logging.INFO)
+        
+    # Set environment variables for OAuth scope relaxation
+    os.environ['OAUTHLIB_RELAX_TOKEN_SCOPE'] = '1'
     
     # Load configuration
     app.config.from_pyfile('config.py')

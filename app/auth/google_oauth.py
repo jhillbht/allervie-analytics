@@ -3,6 +3,7 @@ from google.oauth2.credentials import Credentials
 from flask import session, url_for, current_app
 import json
 import os
+import logging
 
 class GoogleOAuth:
     """Handles Google OAuth authentication flow"""
@@ -17,6 +18,8 @@ class GoogleOAuth:
         # Set OAUTHLIB to allow HTTP for development
         if current_app.config['DEBUG']:
             os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
+            # Allow additional scopes to be appended by Google
+            os.environ['OAUTHLIB_RELAX_TOKEN_SCOPE'] = '1'
     
     def get_auth_url(self):
         """Generate the authorization URL for the OAuth flow"""
@@ -43,6 +46,13 @@ class GoogleOAuth:
         # Create flow with the saved state
         flow = self._create_flow()
         flow.fetch_token(code=code)
+        
+        # Log actual scopes returned vs requested
+        if current_app.config['DEBUG']:
+            requested_scopes = set(self.scopes)
+            received_scopes = set(flow.credentials.scopes)
+            current_app.logger.info(f"Requested scopes: {requested_scopes}")
+            current_app.logger.info(f"Received scopes: {received_scopes}")
         
         # Store credentials in session
         credentials = flow.credentials
