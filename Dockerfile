@@ -29,6 +29,9 @@ RUN mkdir -p flask_session
 # Set permissions
 RUN chmod +x run.py
 
+# Create Google Ads YAML configuration if not exists
+RUN touch google-ads.yaml && chmod 644 google-ads.yaml
+
 # Expose port
 EXPOSE 8080
 

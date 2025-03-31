@@ -1,0 +1,20 @@
+# Google Ads API Configuration
+
+developer_token: HpV1ZGZOKj6JewVzrOdXXw
+
+# Required for manager accounts only: Specify the login customer ID used to authenticate API calls.
+login_customer_id: 8437927403
+
+# Required for manager accounts only: Specify the linked customer ID.
+linked_customer_id: 8437927403
+
+# API Version (using v19 as of March 2025)
+api_version: v19
+
+# OAuth2 configuration
+use_proto_plus: True
+
+# Configure OAuth2 installed application flow (non-service account)
+client_id: 22083613754-d1omeg2958vrsndpqg2v1jp0ncm7sr23.apps.googleusercontent.com
+client_secret: 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
+# refresh_token will be dynamically updated by the application

@@ -6,8 +6,21 @@ from datetime import datetime, timedelta
 from google.ads.googleads.client import GoogleAdsClient
 from google.ads.googleads.errors import GoogleAdsException
 import os
+import logging
+import traceback
+import sys
+import json
+from google.auth.transport.requests import Request
 
 analytics_bp = Blueprint('analytics', __name__)
+
+# Configure logger for debugging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    stream=sys.stdout
+)
+logger = logging.getLogger('allervie-analytics')
 
 @analytics_bp.route('/active-users')
 def active_users():
@@ -69,7 +82,7 @@ def active_users():
         })
     except Exception as e:
         # Handle errors
-        current_app.logger.error(f"Active users error: {str(e)}")
+        logger.error(f"Active users error: {str(e)}")
         return jsonify({
             'success': False,
             'error': str(e)
@@ -135,7 +148,7 @@ def traffic_sources():
         })
     except Exception as e:
         # Handle errors
-        current_app.logger.error(f"Traffic sources error: {str(e)}")
+        logger.error(f"Traffic sources error: {str(e)}")
         return jsonify({
             'success': False,
             'error': str(e)
@@ -152,101 +165,137 @@ def ads_campaigns():
                 'error': 'Not authenticated'
             }), 401
         
-        # Create credentials object
-        credentials = Credentials(**session['credentials'])
+        # Enable more detailed logging
+        logger.setLevel(logging.DEBUG)
+        
+        # Log the start of processing
+        logger.info("Processing Google Ads campaign data request")
+        
+        # Create credentials object from session
+        credentials_dict = session.get('credentials', {})
+        
+        # Log the credential info (without sensitive parts)
+        if credentials_dict:
+            logger.info(f"Credentials scopes: {credentials_dict.get('scopes', [])}")
+            logger.info(f"Credentials have refresh_token: {'Yes' if credentials_dict.get('refresh_token') else 'No'}")
+        
+        # Validate required credential fields
+        required_fields = ['token', 'refresh_token', 'token_uri', 'client_id', 'client_secret', 'scopes']
+        missing_fields = [field for field in required_fields if field not in credentials_dict]
+        
+        if missing_fields:
+            logger.error(f"Missing credential fields: {missing_fields}")
+            return jsonify({
+                'success': False,
+                'error': f"Incomplete credentials. Missing fields: {', '.join(missing_fields)}. Please log out and log in again."
+            }), 400
+        
+        # Create credentials object and refresh if needed
+        credentials = Credentials(**credentials_dict)
+        
+        # Check if token is expired and refresh it
+        if credentials.expired and credentials.refresh_token:
+            logger.info("Refreshing expired OAuth token")
+            credentials.refresh(Request())
+            
+            # Update session with refreshed credentials
+            session['credentials'] = {
+                'token': credentials.token,
+                'refresh_token': credentials.refresh_token,
+                'token_uri': credentials.token_uri,
+                'client_id': credentials.client_id,
+                'client_secret': credentials.client_secret,
+                'scopes': credentials.scopes
+            }
+            logger.info("Updated session with refreshed credentials")
         
         # Get Google Ads configuration
         customer_id = current_app.config['GOOGLE_ADS_CUSTOMER_ID']
         developer_token = current_app.config['GOOGLE_ADS_DEVELOPER_TOKEN']
         
-        # Ensure no YAML config file is used
-        os.environ["GOOGLE_ADS_CONFIGURATION_FILE_PATH"] = ""
-        os.environ["GOOGLE_ADS_YAML_CONFIG_PATH"] = ""
-        
-        # Directly create client configuration dictionary
-        client_config = {
-            "credentials": {
-                "refresh_token": credentials.refresh_token,
-                "client_id": credentials.client_id,
-                "client_secret": credentials.client_secret,
-                "token_uri": credentials.token_uri
-            },
-            "developer_token": developer_token,
-            "use_proto_plus": True,
-            "login_customer_id": customer_id
-        }
-        
-        # Log configuration if in debug mode
-        if current_app.config['DEBUG']:
-            current_app.logger.info(f"Google Ads client configuration keys: {list(client_config.keys())}")
-            current_app.logger.info(f"Credentials keys: {list(client_config['credentials'].keys())}")
-        
-        # Create Google Ads client
-        client = GoogleAdsClient.load_from_dict(client_config)
-        
-        # Get Google Ads service
-        ga_service = client.get_service("GoogleAdsService")
+        # Log the access attempt (without sensitive info)
+        logger.info(f"Accessing Google Ads API with customer_id: {customer_id}")
         
         # Get requested time period
         days = request.args.get('days', default=30, type=int)
         
-        # Calculate date range for query
-        end_date = datetime.now().date()
-        start_date = end_date - timedelta(days=days)
+        # Log the request parameters
+        logger.info(f"Requested campaign data for the last {days} days")
         
-        # Format dates for GAQL query
-        start_date_str = start_date.strftime('%Y-%m-%d')
-        end_date_str = end_date.strftime('%Y-%m-%d')
-        
-        # Build GAQL query
-        query = f"""
-            SELECT
-                campaign.id,
-                campaign.name,
-                campaign.status,
-                metrics.impressions,
-                metrics.clicks,
-                metrics.cost_micros,
-                metrics.conversions,
-                metrics.conversions_value,
-                metrics.ctr,
-                metrics.average_cpc
-            FROM campaign
-            WHERE segments.date BETWEEN '{start_date_str}' AND '{end_date_str}'
-            ORDER BY metrics.impressions DESC
-        """
-        
-        # Execute query
-        response = ga_service.search(
-            customer_id=customer_id,
-            query=query
-        )
-        
-        # Format response data
-        data = []
-        for row in response:
-            campaign = row.campaign
-            metrics = row.metrics
+        # Create GoogleAdsAnalytics instance
+        try:
+            from app.analytics.google_ads import GoogleAdsAnalytics
+            google_ads = GoogleAdsAnalytics(credentials, customer_id, developer_token)
             
-            data.append({
-                'campaign_id': campaign.id,
-                'campaign_name': campaign.name,
-                'campaign_status': campaign.status.name,
-                'impressions': metrics.impressions,
-                'clicks': metrics.clicks,
-                'cost': metrics.cost_micros / 1000000,
-                'conversions': metrics.conversions,
-                'conversion_value': metrics.conversions_value,
-                'ctr': metrics.ctr * 100,
-                'average_cpc': metrics.average_cpc / 1000000
+            # Log the credential status
+            logger.info(f"OAuth credential status - expired: {credentials.expired}, token: {'Present' if credentials.token else 'Missing'}")
+            
+            # Get campaign performance data (this will try GRPC first, then REST API if needed)
+            logger.info("Fetching campaign performance data...")
+            data = google_ads.get_campaign_performance(days)
+            
+            if not data:
+                logger.warning("No campaign data returned from Google Ads API")
+                return jsonify({
+                    'success': True,
+                    'data': [],
+                    'message': 'No campaign data found for the specified period. Check that your Google Ads account has active campaigns.'
+                })
+            
+            # Log success
+            logger.info(f"Successfully retrieved {len(data)} campaigns")
+            
+            return jsonify({
+                'success': True,
+                'data': data
             })
-        
-        return jsonify({
-            'success': True,
-            'data': data
-        })
+        except Exception as api_error:
+            # Log the detailed error for debugging
+            logger.error(f"Google Ads API error details: {str(api_error)}")
+            logger.error(traceback.format_exc())
+            
+            # Try to parse JSON error response if present
+            error_message = str(api_error)
+            try:
+                if "{" in error_message and "}" in error_message:
+                    json_start = error_message.find("{")
+                    json_end = error_message.rfind("}") + 1
+                    json_str = error_message[json_start:json_end]
+                    error_json = json.loads(json_str)
+                    
+                    # Extract more detailed error information
+                    if "error" in error_json:
+                        error_info = error_json["error"]
+                        detailed_message = f"API Error: {error_info.get('message', 'Unknown error')}"
+                        
+                        # Add error details if present
+                        if "details" in error_info:
+                            for detail in error_info["details"]:
+                                if "@type" in detail and "googleads" in detail["@type"].lower():
+                                    if "errors" in detail:
+                                        for error in detail["errors"]:
+                                            error_code = error.get("errorCode", {})
+                                            error_type = next(iter(error_code.keys())) if error_code else "Unknown"
+                                            error_value = error_code.get(error_type) if error_code else "Unknown"
+                                            detailed_message += f"\nError type: {error_type}, Value: {error_value}"
+                                            
+                                            if "message" in error:
+                                                detailed_message += f"\nDetails: {error['message']}"
+                        
+                        error_message = detailed_message
+            except Exception as json_error:
+                # If JSON parsing fails, use the original error message
+                logger.error(f"Error parsing JSON error: {str(json_error)}")
+            
+            # Return a user-friendly error
+            return jsonify({
+                'success': False,
+                'error': f"Error accessing Google Ads API: {error_message}",
+                'error_type': type(api_error).__name__
+            }), 500
+            
     except GoogleAdsException as ex:
-        # Handle Google Ads API errors
+        # Handle Google Ads API errors specifically
         error_message = []
         
         for error in ex.failure.errors:
@@ -255,15 +304,19 @@ def ads_campaigns():
                 for field_path_element in error.location.field_path_elements:
                     error_message.append(f"\tOn field: {field_path_element.field_name}")
             
-        current_app.logger.error(f"Google Ads error: {' '.join(error_message)}")
+        error_str = '\n'.join(error_message)
+        logger.error(f"Google Ads API exception: {error_str}")
+        
         return jsonify({
             'success': False,
-            'error': '\n'.join(error_message)
+            'error': error_str
         }), 500
     except Exception as e:
-        # Handle other errors
-        current_app.logger.error(f"Campaign performance error: {str(e)}")
+        # Handle other unexpected errors
+        logger.error(f"Unexpected error in ads_campaigns: {str(e)}")
+        logger.error(traceback.format_exc())
+        
         return jsonify({
             'success': False,
-            'error': str(e)
+            'error': f"Unexpected error: {str(e)}"
         }), 500

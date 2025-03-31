@@ -3,37 +3,114 @@ from google.ads.googleads.errors import GoogleAdsException
 from datetime import datetime, timedelta
 import os
 import logging
+import json
+import requests
+from google.auth.transport.requests import Request
 
 class GoogleAdsAnalytics:
-    """Google Ads API integration"""
+    """Google Ads API integration with REST API fallback"""
     
     def __init__(self, credentials, customer_id, developer_token):
         """Initialize with OAuth credentials and Google Ads account info"""
         self.customer_id = customer_id
         self.developer_token = developer_token
+        self.credentials = credentials
         
-        # Ensure no YAML config file is used
-        os.environ["GOOGLE_ADS_CONFIGURATION_FILE_PATH"] = ""
-        os.environ["GOOGLE_ADS_YAML_CONFIG_PATH"] = ""
+        # Ensure credentials are fresh
+        if self.credentials.expired and self.credentials.refresh_token:
+            logging.info("Refreshing expired OAuth credentials")
+            self.credentials.refresh(Request())
         
-        # Create Google Ads Client configuration
-        client_config = {
-            "credentials": {
-                "refresh_token": credentials.refresh_token,
-                "client_id": credentials.client_id,
-                "client_secret": credentials.client_secret,
-                "token_uri": credentials.token_uri
-            },
-            "developer_token": developer_token,
-            "use_proto_plus": True,
-            "login_customer_id": customer_id
-        }
+        # Path to the YAML configuration file
+        yaml_path = os.path.join(os.getcwd(), "google-ads.yaml")
         
-        # Create Google Ads Client
-        self.client = GoogleAdsClient.load_from_dict(client_config)
+        # Set configuration file path
+        os.environ["GOOGLE_ADS_CONFIGURATION_FILE_PATH"] = yaml_path
+        
+        # Update the refresh_token in the YAML configuration
+        self._update_refresh_token(yaml_path, credentials.refresh_token)
+        
+        # Try to create Google Ads Client
+        try:
+            # Create Google Ads Client from the YAML file
+            self.client = GoogleAdsClient.load_from_storage(yaml_path)
+            self.use_rest_fallback = False
+            logging.info("Successfully initialized Google Ads GRPC client")
+        except Exception as e:
+            logging.error(f"Failed to create Google Ads GRPC client: {str(e)}")
+            logging.info("Will use REST API fallback for Google Ads")
+            self.use_rest_fallback = True
+    
+    def _update_refresh_token(self, yaml_path, refresh_token):
+        """Update the refresh_token in the YAML configuration file"""
+        if not os.path.exists(yaml_path):
+            # Create a new YAML file if it doesn't exist
+            logging.info(f"Creating new Google Ads YAML configuration file at {yaml_path}")
+            yaml_content = f"""# Google Ads API Configuration
+
+developer_token: {self.developer_token}
+
+# Required for manager accounts only: Specify the login customer ID used to authenticate API calls.
+login_customer_id: {self.customer_id}
+
+# Required for manager accounts only: Specify the linked customer ID.
+linked_customer_id: {self.customer_id}
+
+# API Version (using v19 as of March 2025)
+api_version: v19
+
+# OAuth2 configuration
+use_proto_plus: True
+
+# Configure OAuth2 installed application flow (non-service account)
+client_id: {self.credentials.client_id}
+client_secret: {self.credentials.client_secret}
+refresh_token: {refresh_token}
+"""
+            
+            # Write the YAML file
+            with open(yaml_path, 'w') as file:
+                file.write(yaml_content)
+            return
+        
+        # Read the YAML file
+        with open(yaml_path, 'r') as file:
+            yaml_content = file.read()
+        
+        # Check if refresh_token needs to be added or updated
+        if 'refresh_token:' not in yaml_content:
+            # Add refresh_token at the end of the file
+            yaml_content += f"\nrefresh_token: {refresh_token}\n"
+        else:
+            # Replace existing refresh_token
+            import re
+            yaml_content = re.sub(
+                r'refresh_token:.*', 
+                f'refresh_token: {refresh_token}',
+                yaml_content
+            )
+        
+        # Write the updated YAML file
+        with open(yaml_path, 'w') as file:
+            file.write(yaml_content)
+        
+        logging.info(f"Updated refresh_token in {yaml_path}")
     
     def get_campaign_performance(self, days=30):
         """Get campaign performance data for the specified number of days"""
+        try:
+            # First try using the GRPC client
+            if not self.use_rest_fallback:
+                return self._get_campaign_performance_grpc(days)
+        except Exception as e:
+            logging.warning(f"GRPC client failed, falling back to REST API: {str(e)}")
+            self.use_rest_fallback = True
+        
+        # If GRPC fails or is disabled, use REST API fallback
+        return self._get_campaign_performance_rest(days)
+    
+    def _get_campaign_performance_grpc(self, days=30):
+        """Get campaign performance data using GRPC client"""
         ga_service = self.client.get_service("GoogleAdsService")
         
         # Calculate date range for query
@@ -102,3 +179,125 @@ class GoogleAdsAnalytics:
                         error_message.append(f"\tOn field: {field_path_element.field_name}")
                 
             raise Exception('\n'.join(error_message))
+    
+    def _get_campaign_performance_rest(self, days=30):
+        """Fallback implementation using Google Ads REST API"""
+        logging.info("Using REST API for Google Ads")
+        
+        # Calculate date range
+        end_date = datetime.now().date()
+        start_date = end_date - timedelta(days=days)
+        
+        # Format dates for query
+        start_date_str = start_date.strftime('%Y-%m-%d')
+        end_date_str = end_date.strftime('%Y-%m-%d')
+        
+        # Make sure the credentials are fresh
+        if self.credentials.expired and self.credentials.refresh_token:
+            logging.info("Refreshing expired OAuth credentials for REST API")
+            self.credentials.refresh(Request())
+        
+        # Prepare the Google Ads REST API request
+        # Use v19 which is the current version as of March 2025
+        api_version = "v19"
+        
+        # Use correct endpoint format:
+        # https://googleads.googleapis.com/{version}/customers/{customer_id}/googleAds:search
+        base_url = f"https://googleads.googleapis.com/{api_version}/customers/{self.customer_id}/googleAds:search"
+        
+        # Log the URL being used
+        logging.info(f"Google Ads REST API URL: {base_url}")
+        
+        # Build the GAQL query
+        query = f"""
+            SELECT
+                campaign.id,
+                campaign.name,
+                campaign.status,
+                metrics.impressions,
+                metrics.clicks,
+                metrics.cost_micros,
+                metrics.conversions,
+                metrics.conversions_value,
+                metrics.ctr,
+                metrics.average_cpc
+            FROM campaign
+            WHERE segments.date BETWEEN '{start_date_str}' AND '{end_date_str}'
+            ORDER BY metrics.impressions DESC
+        """
+        
+        # Prepare the request data
+        request_data = {
+            "query": query
+        }
+        
+        # Prepare the authorization header
+        headers = {
+            "Authorization": f"Bearer {self.credentials.token}",
+            "developer-token": self.developer_token,
+            "Content-Type": "application/json"
+        }
+        
+        # Add login-customer-id header if necessary
+        if self.customer_id:
+            headers["login-customer-id"] = self.customer_id
+        
+        # Log headers (without sensitive information)
+        safe_headers = headers.copy()
+        safe_headers["Authorization"] = "Bearer [REDACTED]"
+        safe_headers["developer-token"] = "[REDACTED]"
+        logging.info(f"Request headers: {safe_headers}")
+        
+        # Make the request
+        logging.info(f"Making REST API request to Google Ads")
+        response = requests.post(base_url, headers=headers, json=request_data)
+        
+        # Check if the request was successful
+        if response.status_code != 200:
+            error_msg = f"Google Ads REST API request failed with status {response.status_code}: {response.text}"
+            logging.error(error_msg)
+            raise Exception(error_msg)
+        
+        # Parse the response
+        response_data = response.json()
+        
+        # Log the success
+        logging.info("Successfully received response from Google Ads REST API")
+        
+        # Process the results
+        results = []
+        
+        if "results" in response_data:
+            for result in response_data["results"]:
+                # Extract the data from the result
+                campaign_id = result.get("campaign", {}).get("id")
+                campaign_name = result.get("campaign", {}).get("name")
+                campaign_status = result.get("campaign", {}).get("status")
+                
+                metrics = result.get("metrics", {})
+                impressions = float(metrics.get("impressions", 0))
+                clicks = float(metrics.get("clicks", 0))
+                cost_micros = float(metrics.get("costMicros", 0))
+                conversions = float(metrics.get("conversions", 0))
+                conversions_value = float(metrics.get("conversionsValue", 0))
+                ctr = float(metrics.get("ctr", 0)) * 100  # Convert to percentage
+                average_cpc = float(metrics.get("averageCpc", 0)) / 1000000  # Convert micros to standard currency
+                
+                # Format the data
+                results.append({
+                    'campaign_id': campaign_id,
+                    'campaign_name': campaign_name,
+                    'campaign_status': campaign_status,
+                    'impressions': impressions,
+                    'clicks': clicks,
+                    'cost': cost_micros / 1000000,  # Convert micros to standard currency
+                    'conversions': conversions,
+                    'conversion_value': conversions_value,
+                    'ctr': ctr,
+                    'average_cpc': average_cpc
+                })
+        
+        if not results:
+            logging.warning("No campaign data returned from Google Ads REST API")
+            
+        return results
